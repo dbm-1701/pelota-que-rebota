@@ -2,17 +2,17 @@
 Pelotita loca:
 - Fondo de un solo color que va cambiando de forma continua.
 - Pelota grande, con textura, que se deforma (squash) y cambia de tamano al rebotar.
-- Rebote suave y constante (sin perder energia) en los cuatro bordes de la pantalla.
+- Pelota grande, con textura, que cae y rebota con fisica real (gravedad) en los 4 bordes.
 - Cada rebote emite un sonido con p5.sound; el tono depende de la velocidad.
-- Si pasas el cursor por encima, la pelota se vuelve loca.
 - El mouse suelta particulas que viven 10 segundos.
 */
 
 const RADIO = 45;              // radio base de la pelota
-const GRAVEDAD = 0.3;          // menos fuerza = caida mas suave
-const VEL_MAX = 40;            // tope de seguridad
-const RESTITUCION = 1;         // 1 = rebote perfecto: no pierde ni gana energia
-const DURACION_LOCA = 120;     // frames que dura el ataque de locura (~2 s)
+const GRAVEDAD = 0.4;          // la hace caer: movimiento con fisica real
+const AMORTIGUACION = 0.9;     // energia que conserva en cada rebote
+const VEL_MAX = 18;            // tope de velocidad (evita que se dispare)
+const RADIO_MAX = RADIO * 1.6; // tamano maximo al crecer en los rebotes
+const RADIO_MIN = RADIO * 0.9; // tamano al reiniciar el ciclo de crecimiento
 const VELOCIDAD_FONDO = 0.01;  // que tan rapido cambia el color del fondo
 const VIDA_PARTICULA = 10000;  // ms que vive cada particula (10 s)
 const MAX_PARTICULAS = 600;    // tope para no saturar el dibujo
@@ -22,9 +22,6 @@ let radioActual, radioObjetivo;
 let colorPelota;
 let colorFondo;
 let sonidoListo = false;
-
-let tiempoLoca = 0;
-let temporizadorLoca = 0;
 
 // Deformacion (squash) al rebotar.
 let deform = 0;        // 0 = redonda, hasta ~0.45 al golpear
@@ -39,9 +36,8 @@ function setup() {
 
   posX = width / 2;
   posY = height / 2;
-  velX = random([-1, 1]) * random(1.5, 3);
-  // Impulso justo para alcanzar el borde superior (asi rebota en los 4 bordes).
-  velY = -sqrt(2 * GRAVEDAD * max(20, posY - RADIO + 30));
+  velX = random([-1, 1]) * random(3, 6);
+  velY = -random(11, 15); // lanzada hacia arriba con fuerza
 
   radioActual = RADIO;
   radioObjetivo = RADIO;
@@ -65,17 +61,7 @@ function draw() {
   radioActual = lerp(radioActual, radioObjetivo, 0.2);
   deform = lerp(deform, 0, 0.2);
 
-  // Si el cursor esta encima, la pelota se vuelve loca un rato.
-  if (dist(mouseX, mouseY, posX, posY) < radioActual) {
-    tiempoLoca = DURACION_LOCA;
-  }
-
-  if (tiempoLoca > 0) {
-    tiempoLoca--;
-    moverLoca();
-  } else {
-    moverYRebotar();
-  }
+  moverYRebotar();
 
   emitirParticulas();
   actualizarParticulas();
@@ -138,67 +124,49 @@ function dibujarPelota() {
 }
 
 function moverYRebotar() {
+  // Fisica real: la gravedad la hace caer y los rebotes conservan parte de la fuerza.
   posX += velX;
   posY += velY;
   velY += GRAVEDAD;
 
-  // Rebote en los 4 bordes. Se refleja tambien la posicion para no ganar
-  // energia por el "hundimiento" y que el rebote quede estable.
   if (posY > height - radioActual) { // piso
     posY = 2 * (height - radioActual) - posY;
-    let impacto = abs(velY);
-    velY = -impacto * RESTITUCION;
-    if (impacto > 2) reboteEfectos(impacto, "y");
+    velY = -abs(velY) * AMORTIGUACION;
+    if (abs(velY) < 5) velY = -random(7, 12); // que no se quede muerta
+    reboteEfectos(abs(velY), "y");
   }
 
   if (posY < radioActual) { // techo
     posY = 2 * radioActual - posY;
-    let impacto = abs(velY);
-    velY = impacto * RESTITUCION;
-    if (impacto > 2) reboteEfectos(impacto, "y");
+    velY = abs(velY) * AMORTIGUACION;
+    reboteEfectos(abs(velY), "y");
   }
 
   if (posX < radioActual) { // pared izquierda
     posX = 2 * radioActual - posX;
-    let impacto = abs(velX);
-    velX = impacto * RESTITUCION;
-    if (impacto > 2) reboteEfectos(impacto, "x");
+    velX = abs(velX) * AMORTIGUACION;
+    if (abs(velX) < 2) velX = random(3, 6); // sigue rebotando en los lados
+    reboteEfectos(abs(velX), "x");
   }
 
   if (posX > width - radioActual) { // pared derecha
     posX = 2 * (width - radioActual) - posX;
-    let impacto = abs(velX);
-    velX = -impacto * RESTITUCION;
-    if (impacto > 2) reboteEfectos(impacto, "x");
+    velX = -abs(velX) * AMORTIGUACION;
+    if (abs(velX) < 2) velX = -random(3, 6);
+    reboteEfectos(abs(velX), "x");
   }
 
   velX = constrain(velX, -VEL_MAX, VEL_MAX);
   velY = constrain(velY, -VEL_MAX, VEL_MAX);
 }
 
-// Modo loco: velocidad muy alta y cambios bruscos de direccion.
-function moverLoca() {
-  if (temporizadorLoca <= 0) {
-    velX = random([-1, 1]) * random(8, 14);
-    velY = random([-1, 1]) * random(8, 14);
-    temporizadorLoca = floor(random(4, 10));
-  }
-  temporizadorLoca--;
-
-  posX += velX;
-  posY += velY;
-
-  if (posX < radioActual) { posX = radioActual; velX = abs(velX); reboteEfectos(abs(velX), "x"); }
-  if (posX > width - radioActual) { posX = width - radioActual; velX = -abs(velX); reboteEfectos(abs(velX), "x"); }
-  if (posY < radioActual) { posY = radioActual; velY = abs(velY); reboteEfectos(abs(velY), "y"); }
-  if (posY > height - radioActual) { posY = height - radioActual; velY = -abs(velY); reboteEfectos(abs(velY), "y"); }
-}
-
 // Al chocar con un borde: cambia color y tamano, se deforma y suena.
 function reboteEfectos(velocidad, eje) {
   cambiarColor();
-  radioObjetivo = RADIO * random(0.72, 1.28);
-  deform = constrain(velocidad / VEL_MAX, 0, 1) * 0.45;
+  // En cada borde crece un poco; al llegar al maximo, reinicia el ciclo.
+  radioObjetivo *= random(1.05, 1.1);
+  if (radioObjetivo > RADIO_MAX) radioObjetivo = RADIO_MIN;
+  deform = constrain(velocidad / 6, 0, 1) * 0.45;
   deformEje = eje;
   sonar(velocidad);
 }
